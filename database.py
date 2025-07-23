@@ -1,20 +1,9 @@
 import asyncpg
 import logging
-import sys
-
 from typing import List, Dict, Optional
 
 from config import DB_CONFIG
 
-# Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('bot.log'),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
 logger = logging.getLogger(__name__)
 
 
@@ -46,8 +35,8 @@ class Database:
             user_id BIGINT NOT NULL,
             task_text TEXT NOT NULL,
             status BOOLEAN DEFAULT FALSE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            completed_at TIMESTAMP NULL
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP WITH TIME ZONE NULL
         );
 
         CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
@@ -63,15 +52,25 @@ class Database:
 
     async def add_task(self, user_id: int, task_text: str) -> int:
         """Добавление новой задачи"""
+        # Валидация входных данных
+        if not task_text or not task_text.strip():
+            raise ValueError("Текст задачи не может быть пустым")
+
+        if len(task_text) > 1000:
+            raise ValueError("Текст задачи слишком длинный")
+
         query = """
         INSERT INTO tasks (user_id, task_text)
         VALUES ($1, $2)
         RETURNING id
         """
 
-        # Добавляем задачу в базу данных
         async with self.pool.acquire() as connection:
-            task_id = await connection.fetchval(query, user_id, task_text)
+            task_id = await connection.fetchval(
+                query,
+                user_id,
+                task_text.strip()
+            )
             logger.info(
                 f"Добавлена задача {task_id} для пользователя {user_id}"
             )
@@ -80,16 +79,18 @@ class Database:
     async def get_user_tasks(
             self,
             user_id: int,
-            include_completed: bool = False
+            include_completed: bool = False,
+            limit: int = 50,
+            offset: int = 0
     ) -> List[Dict]:
-        """Получение задач пользователя"""
-        # Фильтрация задач
+        """Получение задач пользователя с пагинацией"""
         if include_completed:
             query = """
             SELECT id, task_text, status, created_at, completed_at
             FROM tasks
             WHERE user_id = $1
             ORDER BY created_at DESC
+            LIMIT $2 OFFSET $3
             """
         else:
             query = """
@@ -97,11 +98,11 @@ class Database:
             FROM tasks
             WHERE user_id = $1 AND status = FALSE
             ORDER BY created_at DESC
+            LIMIT $2 OFFSET $3
             """
 
-        # Получение задач
         async with self.pool.acquire() as connection:
-            rows = await connection.fetch(query, user_id)
+            rows = await connection.fetch(query, user_id, limit, offset)
             return [dict(row) for row in rows]
 
     async def complete_task(self, task_id: int, user_id: int) -> bool:
@@ -110,13 +111,12 @@ class Database:
         UPDATE tasks
         SET status = TRUE, completed_at = CURRENT_TIMESTAMP
         WHERE id = $1 AND user_id = $2 AND status = FALSE
+        RETURNING id
         """
 
-        # Отмечаем задачу как выполненную
         async with self.pool.acquire() as connection:
-            result = await connection.execute(query, task_id, user_id)
-            # Проверяем количество затронутых строк
-            success = result.split()[-1] == '1'
+            result = await connection.fetchval(query, task_id, user_id)
+            success = result is not None
             if success:
                 logger.info(
                     (
@@ -128,12 +128,11 @@ class Database:
 
     async def delete_task(self, task_id: int, user_id: int) -> bool:
         """Удаление задачи"""
-        query = "DELETE FROM tasks WHERE id = $1 AND user_id = $2"
+        query = "DELETE FROM tasks WHERE id = $1 AND user_id = $2 RETURNING id"
 
-        # Удаляем задачу
         async with self.pool.acquire() as connection:
-            result = await connection.execute(query, task_id, user_id)
-            success = result.split()[-1] == '1'
+            result = await connection.fetchval(query, task_id, user_id)
+            success = result is not None
             if success:
                 logger.info(
                     f"Задача {task_id} удалена пользователем {user_id}"
@@ -152,10 +151,61 @@ class Database:
         WHERE id = $1 AND user_id = $2
         """
 
-        # Получение задачи
         async with self.pool.acquire() as connection:
             row = await connection.fetchrow(query, task_id, user_id)
             return dict(row) if row else None
+
+    async def update_task(
+            self,
+            task_id: int,
+            user_id: int,
+            new_text: str
+    ) -> bool:
+        """Обновление текста задачи"""
+        # Валидация входных данных
+        if not new_text or not new_text.strip():
+            raise ValueError("Текст задачи не может быть пустым")
+
+        if len(new_text) > 1000:
+            raise ValueError("Текст задачи слишком длинный")
+
+        query = """
+        UPDATE tasks
+        SET task_text = $3
+        WHERE id = $1 AND user_id = $2 AND status = FALSE
+        RETURNING id
+        """
+
+        async with self.pool.acquire() as connection:
+            result = await connection.fetchval(
+                query,
+                task_id,
+                user_id,
+                new_text.strip()
+            )
+            success = result is not None
+            if success:
+                logger.info(
+                    f"Текст задачи {task_id} обновлен пользователем {user_id}"
+                )
+            return success
+
+    async def get_user_tasks_count(
+            self,
+            user_id: int,
+            include_completed: bool = False
+    ) -> int:
+        """Получение количества задач пользователя"""
+        if include_completed:
+            query = "SELECT COUNT(*) FROM tasks WHERE user_id = $1"
+        else:
+            query = """
+            SELECT COUNT(*) FROM tasks
+            WHERE user_id = $1 AND status = FALSE
+            """
+
+        async with self.pool.acquire() as connection:
+            return await connection.fetchval(query, user_id)
 
 
 # Глобальный экземпляр базы данных
