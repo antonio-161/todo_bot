@@ -1,0 +1,46 @@
+# docker-compose.dev.yml
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: todo_bot_db_dev
+    env_file: # <-- Загружаем все переменные из .env
+      - .env
+    # Официальный образ PostgreSQL автоматически использует переменные POSTGRES_DB,
+    # POSTGRES_USER, POSTGRES_PASSWORD из окружения для инициализации.
+    # Поэтому явная секция 'environment' здесь не нужна, если все есть в .env.
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+      # Если у вас есть скрипт инициализации БД (например, создание таблиц),
+      # раскомментируйте следующую строку:
+      - ./init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
+    ports:
+      - "5432:5432" # Проброс порта для доступа к БД с хоста (опционально)
+    healthcheck:
+      # Используем переменные, которые будут загружены из .env
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: todo_bot_dev
+    env_file: # <-- Загружаем все переменные из .env
+      - .env
+    # Все переменные, включая BOT_TOKEN, DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD,
+    # а также INIT_DB_USER, INIT_DB_PASS, INIT_DB_HOST, INIT_DB_PORT, INIT_DB_NAME
+    # будут доступны внутри контейнера бота через os.getenv().
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+    command: python bot.py # Убедитесь, что это правильный путь к вашему основному файлу бота
+
+volumes:
+  postgres_data_dev:

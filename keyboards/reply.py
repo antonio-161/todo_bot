@@ -9,6 +9,7 @@ def get_main_keyboard() -> ReplyKeyboardMarkup:
             KeyboardButton(text="📋 Мои задачи")
         ],
         [
+            KeyboardButton(text="🌍 Часовой пояс"),
             KeyboardButton(text="❓ Помощь")
         ]
     ]

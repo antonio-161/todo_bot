@@ -3,10 +3,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Bot configuration
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 
-# Database configuration
 DB_CONFIG = {
     'host': os.getenv('DB_HOST', 'localhost'),
     'port': int(os.getenv('DB_PORT', 5432)),
@@ -15,31 +13,47 @@ DB_CONFIG = {
     'password': os.getenv('DB_PASSWORD')
 }
 
-# Validate configuration
+# Валидация переменных окружения
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN не задан в переменных среды")
 
-if not all([DB_CONFIG['user'], DB_CONFIG['password']]):
+required_db_fields = ['user', 'password']
+missing_fields = [
+    field for field in required_db_fields
+    if not DB_CONFIG[field]
+]
+
+# Валидация конфигурации БД
+if missing_fields:
     raise ValueError(
-        "Пользователь и пароль базы данных не заданы в переменных среды"
+        f"Не заданы обязательные параметры БД: {', '.join(missing_fields)}"
     )
 
-# Initial database configuration
+# Первоначальная конфигурация БД
 INIT_DB_USER = os.getenv('INIT_DB_USER', 'postgres')
 INIT_DB_PASS = os.getenv('INIT_DB_PASS', 'your_admin_password')
 INIT_DB_HOST = os.getenv('INIT_DB_HOST', 'localhost')
 INIT_DB_PORT = int(os.getenv('INIT_DB_PORT', 5432))
 INIT_DB_NAME = os.getenv('INIT_DB_NAME', 'todo_bot')
 
-# Validate initial database configuration
-if not all([INIT_DB_USER, INIT_DB_PASS, INIT_DB_NAME]):
-    raise ValueError(
-        (
-            "В переменных среды не указаны имя пользователя, "
-            "пароль или название исходной базы данных"
+
+# Валидация конфигурации для инициализации БД (если заданы)
+def validate_init_config():
+    """Валидация конфигурации для инициализации БД"""
+    required_init_fields = {
+        'INIT_DB_USER': INIT_DB_USER,
+        'INIT_DB_PASS': INIT_DB_PASS,
+        'INIT_DB_HOST': INIT_DB_HOST,
+        'INIT_DB_NAME': INIT_DB_NAME
+    }
+
+    missing_init_fields = [
+        field for field, value in required_init_fields.items()
+        if not value or value == 'your_admin_password'
+    ]
+
+    if missing_init_fields:
+        raise ValueError(
+            "Не заданы параметры "
+            f"инициализации БД: {', '.join(missing_init_fields)}"
         )
-    )
-if not INIT_DB_HOST or not INIT_DB_PORT:
-    raise ValueError(
-        "В переменных среды не указаны хост или порт исходной базы данных"
-    )

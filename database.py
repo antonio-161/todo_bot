@@ -39,11 +39,20 @@ class Database:
             completed_at TIMESTAMP WITH TIME ZONE NULL
         );
 
+        CREATE TABLE IF NOT EXISTS users (
+            user_id BIGINT PRIMARY KEY,
+            timezone VARCHAR(50) DEFAULT 'UTC',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+
         CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
         CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
         CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
         CREATE INDEX IF NOT EXISTS idx_tasks_completed_at
         ON tasks(completed_at);
+        CREATE INDEX IF NOT EXISTS idx_users_timezone
+        ON users(timezone);
         """
 
         async with self.pool.acquire() as connection:
@@ -206,6 +215,40 @@ class Database:
 
         async with self.pool.acquire() as connection:
             return await connection.fetchval(query, user_id)
+
+    async def set_user_timezone(self, user_id: int, timezone: str) -> bool:
+        """Установка часового пояса пользователя"""
+        query = """
+        INSERT INTO users (user_id, timezone, updated_at)
+        VALUES ($1, $2, CURRENT_TIMESTAMP)
+        ON CONFLICT (user_id)
+        DO UPDATE SET
+            timezone = EXCLUDED.timezone,
+            updated_at = CURRENT_TIMESTAMP
+        """
+
+        async with self.pool.acquire() as connection:
+            try:
+                await connection.execute(query, user_id, timezone)
+                logger.info(
+                    f"Часовой пояс {timezone} установлен "
+                    f"для пользователя {user_id}"
+                )
+                return True
+            except Exception as e:
+                logger.error(
+                    "Ошибка установки часового пояса "
+                    f"для пользователя {user_id}: {e}"
+                )
+                return False
+
+    async def get_user_timezone(self, user_id: int) -> str:
+        """Получение часового пояса пользователя"""
+        query = "SELECT timezone FROM users WHERE user_id = $1"
+
+        async with self.pool.acquire() as connection:
+            timezone = await connection.fetchval(query, user_id)
+            return timezone if timezone else 'UTC'
 
 
 # Глобальный экземпляр базы данных

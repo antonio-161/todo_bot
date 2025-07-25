@@ -2,37 +2,7 @@ from typing import List, Dict
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-
-def get_task_keyboard(
-    task_id: int,
-    is_completed: bool = False
-) -> InlineKeyboardMarkup:
-    """Создание inline-клавиатуры для отдельной задачи"""
-    buttons = []
-    # Добавляем кнопку "Выполнено"
-    if not is_completed:
-        buttons.append([
-            InlineKeyboardButton(
-                text="✅ Выполнено",
-                callback_data=f"complete_task:{task_id}"
-            )
-        ])
-    # Добавляем кнопку "Удалить"
-    buttons.append([
-        InlineKeyboardButton(
-            text="🗑 Удалить",
-            callback_data=f"delete_task:{task_id}"
-        )
-    ])
-    # Добавляем кнопку "Назад"
-    buttons.append([
-        InlineKeyboardButton(
-            text="⬅️ Назад",
-            callback_data="my_tasks"
-        )
-    ])
-
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+from utils.timezone_utils import get_timezone_keyboard_data
 
 
 def get_tasks_list_keyboard(tasks: List[Dict]) -> InlineKeyboardMarkup:
@@ -72,34 +42,53 @@ def get_tasks_list_keyboard(tasks: List[Dict]) -> InlineKeyboardMarkup:
 
 def get_task_detail_keyboard(
     task_id: int,
-    is_completed: bool = False
+    is_completed: bool = False,
+    edit: bool = False
 ) -> InlineKeyboardMarkup:
     """Клавиатура для детального просмотра задачи"""
     buttons = []
 
-    # Добавляем кнопку "Отметить выполненной"
-    if not is_completed:
+    if edit:
+        # Режим редактирования - только кнопка отмены
         buttons.append([
             InlineKeyboardButton(
-                text="✅ Отметить выполненной",
-                callback_data=f"complete_task:{task_id}"
+                text="❌ Отменить редактирование",
+                callback_data=f"cancel_edit:{task_id}"
             )
         ])
+    else:
+        # Обычный режим просмотра
+        if not is_completed:
+            # Кнопки для активных задач
+            buttons.extend([
+                [
+                    InlineKeyboardButton(
+                        text="✅ Отметить выполненной",
+                        callback_data=f"complete_task:{task_id}"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="✏️ Редактировать",
+                        callback_data=f"edit_task:{task_id}"
+                    )
+                ]
+            ])
 
-    # Добавляем кнопку "Удалить задачу" и кнопку "Назад к списку"
-    buttons.extend([
-        [
+        # Кнопка удаления для всех задач
+        buttons.append([
             InlineKeyboardButton(
                 text="🗑 Удалить задачу",
                 callback_data=f"delete_task:{task_id}"
             )
-        ],
-        [
-            InlineKeyboardButton(
-                text="⬅️ Назад к списку",
-                callback_data="my_tasks"
-            )
-        ]
+        ])
+
+    # Кнопка возврата к списку
+    buttons.append([
+        InlineKeyboardButton(
+            text="⬅️ Назад к списку",
+            callback_data="my_tasks"
+        )
     ])
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -122,5 +111,30 @@ def get_confirmation_keyboard(
             )
         ]
     ]
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def get_timezone_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для выбора часового пояса"""
+    timezone_data = get_timezone_keyboard_data()
+    buttons = []
+
+    # Добавляем кнопки по 1 в ряд для лучшей читаемости
+    for tz_info in timezone_data:
+        buttons.append([
+            InlineKeyboardButton(
+                text=tz_info['name'],
+                callback_data=f"set_tz:{tz_info['tz']}"
+            )
+        ])
+
+    # Добавляем кнопку для ручного ввода
+    buttons.append([
+        InlineKeyboardButton(
+            text="✏️ Ввести вручную",
+            callback_data="timezone_manual"
+        )
+    ])
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)

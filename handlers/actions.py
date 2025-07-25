@@ -10,36 +10,21 @@ from keyboards.inline import (
 )
 from states import TaskStates
 from utils.logging_config import get_logger
+from utils.task_formatting import format_task_detail_text
+from utils.timezone_utils import format_datetime_for_user
 
 logger = get_logger(__name__)
 
 router = Router()
 
 
-async def format_task_detail_text(task: dict) -> str:
-    """Форматирование текста с деталями задачи"""
-    created_date = task['created_at'].strftime("%d.%m.%Y в %H:%M")
-    status_text = "✅ Выполнена" if task['status'] else "⏳ Активна"
-
-    text = f"""📝 <b>Детали задачи</b>
-
-<b>Текст:</b>
-<i>{task['task_text']}</i>
-
-<b>Статус:</b> {status_text}
-<b>Создана:</b> {created_date}"""
-
-    if task['status'] and task['completed_at']:
-        completed_date = task['completed_at'].strftime("%d.%m.%Y в %H:%M")
-        text += f"\n<b>Выполнена:</b> {completed_date}"
-
-    return text
-
-
 async def update_tasks_list_message(callback: CallbackQuery):
     """Обновление сообщения со списком задач"""
     user_id = callback.from_user.id
     tasks = await db.get_user_tasks(user_id, include_completed=False)
+
+    # Получаем часовой пояс пользователя
+    user_timezone = await db.get_user_timezone(user_id)
 
     if not tasks:
         no_tasks_text = """📋 <b>Список задач</b>
@@ -58,7 +43,10 @@ async def update_tasks_list_message(callback: CallbackQuery):
     tasks_text = f"📋 <b>Твои задачи ({len(tasks)})</b>\n\n"
 
     for i, task in enumerate(tasks, 1):
-        created_date = task['created_at'].strftime("%d.%m.%Y")
+        # Используем пользовательский часовой пояс
+        created_date = format_datetime_for_user(
+            task['created_at'], user_timezone
+        ).split(' в ')[0]  # Берем только дату без времени
         status_emoji = "✅" if task['status'] else "⏳"
 
         task_text = task['task_text']
@@ -154,10 +142,15 @@ async def complete_task_callback(callback: CallbackQuery):
                 "✅ Задача отмечена как выполненная!", show_alert=True
             )
 
+            # Получаем часовой пояс пользователя
+            user_timezone = await db.get_user_timezone(user_id)
+
             # Обновляем сообщение с деталями задачи
             task = await db.get_task_by_id(task_id, user_id)
             if task:
-                updated_text = await format_task_detail_text(task)
+                updated_text = await format_task_detail_text(
+                    task, user_timezone
+                )
                 await callback.message.edit_text(
                     updated_text,
                     parse_mode="HTML",
@@ -274,7 +267,11 @@ async def cancel_edit_callback(callback: CallbackQuery, state: FSMContext):
     try:
         task = await db.get_task_by_id(task_id, user_id)
         if task:
-            task_detail_text = await format_task_detail_text(task)
+            # Получаем часовой пояс пользователя
+            user_timezone = await db.get_user_timezone(user_id)
+            task_detail_text = await format_task_detail_text(
+                task, user_timezone
+            )
             await callback.message.edit_text(
                 task_detail_text,
                 parse_mode="HTML",

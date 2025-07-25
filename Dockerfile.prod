@@ -1,0 +1,43 @@
+# Этап сборки
+FROM python:3.12-slim AS builder
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
+
+# Финальный образ
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Копирование только установленных зависимостей из этапа сборки
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+# Копирование вашего кода
+COPY . .
+
+# Создание директории для логов (если нужно в контейнере, но без монтирования)
+RUN mkdir -p logs
+
+# Создание пользователя для безопасности
+RUN useradd --create-home --shell /bin/bash app \
+    && chown -R app:app /app
+USER app
+
+# Переменные среды
+ENV PYTHONPATH=/app
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import asyncio; import asyncpg; print('OK')" || exit 1
+
+# Запуск бота
+CMD ["python", "bot.py"]

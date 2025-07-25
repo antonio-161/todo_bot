@@ -1,25 +1,17 @@
-import logging
-import sys
-
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery
 
 from database import db
 from keyboards.inline import get_tasks_list_keyboard, get_task_detail_keyboard
-
-router = Router()
-
-# Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('bot.log'),
-        logging.StreamHandler(sys.stdout)
-    ]
+from utils.logging_config import get_logger
+from utils.task_formatting import (
+    format_tasks_list_text,
+    format_task_detail_text
 )
-logger = logging.getLogger(__name__)
+
+logger = get_logger(__name__)
+router = Router()
 
 
 @router.message(Command("my_tasks"))
@@ -43,47 +35,13 @@ async def show_tasks_list(update):
     try:
         # Получаем активные задачи пользователя
         tasks = await db.get_user_tasks(user_id, include_completed=False)
-        # Если задач нет, показываем сообщение об отсутствии задач
-        if not tasks:
-            no_tasks_text = """
-📋 <b>Список задач</b>
 
-У тебя пока нет активных задач!
+        # Получаем часовой пояс пользователя
+        user_timezone = await db.get_user_timezone(user_id)
 
-Создай свою первую задачу с помощью кнопки ниже или команды /new_task
-"""
-            # Обновляем сообщение
-            if edit_message:
-                await message.edit_text(
-                    no_tasks_text,
-                    parse_mode="HTML",
-                    reply_markup=get_tasks_list_keyboard([])
-                )
-            else:
-                await message.answer(
-                    no_tasks_text,
-                    parse_mode="HTML",
-                    reply_markup=get_tasks_list_keyboard([])
-                )
-            return
+        # Форматируем текст списка задач с пользовательским часовым поясом
+        tasks_text = format_tasks_list_text(tasks, user_timezone)
 
-        # Формируем текст со списком задач
-        tasks_text = f"📋 <b>Твои задачи ({len(tasks)})</b>\n\n"
-        # Добавляем каждую задачу в текст
-        for i, task in enumerate(tasks, 1):
-            created_date = task['created_at'].strftime("%d.%m.%Y")
-            status_emoji = "✅" if task['status'] else "⏳"
-
-            # Обрезаем длинные задачи в списке
-            task_text = task['task_text']
-            if len(task_text) > 60:
-                task_text = task_text[:57] + "..."
-            # Добавляем задачу в текст
-            tasks_text += f"{i}. {status_emoji} <i>{task_text}</i>\n"
-            # Добавляем дату создания
-            tasks_text += f"   📅 {created_date}\n\n"
-
-        tasks_text += "👆 <i>Нажми на задачу для подробного просмотра</i>"
         # Обновляем сообщение
         if edit_message:
             await message.edit_text(
@@ -100,13 +58,12 @@ async def show_tasks_list(update):
 
     except Exception as e:
         error_text = "❌ Произошла ошибка при загрузке задач. Попробуй еще раз."
+        logger.error(f"Error loading tasks for user {user_id}: {e}")
 
         if edit_message:
             await message.edit_text(error_text)
         else:
             await message.answer(error_text)
-
-        logger.error(f"Error loading tasks for user {user_id}: {e}")
 
 
 @router.callback_query(F.data.startswith("show_task:"))
@@ -114,15 +71,18 @@ async def show_task_detail(callback: CallbackQuery):
     """Показать детали конкретной задачи"""
     await callback.answer()
 
-    # Извлекаем ID задачи из callback_data
-    task_id = int(callback.data.split(":")[1])
+    try:
+        task_id = int(callback.data.split(":")[1])
+    except (ValueError, IndexError):
+        await callback.answer("❌ Неверный формат данных", show_alert=True)
+        return
+
     user_id = callback.from_user.id
 
     try:
         # Получаем задачу из БД
         task = await db.get_task_by_id(task_id, user_id)
 
-        # Если задача не найдена, выходим
         if not task:
             await callback.message.edit_text(
                 "❌ Задача не найдена или была удалена.",
@@ -130,24 +90,12 @@ async def show_task_detail(callback: CallbackQuery):
             )
             return
 
-        # Форматируем информацию о задаче
-        created_date = task['created_at'].strftime("%d.%m.%Y в %H:%M")
-        status_text = "✅ Выполнена" if task['status'] else "⏳ В процессе"
+        # Получаем часовой пояс пользователя
+        user_timezone = await db.get_user_timezone(user_id)
 
-        task_detail_text = f"""
-📝 <b>Детали задачи</b>
+        # Используем общую функцию форматирования с часовым поясом
+        task_detail_text = await format_task_detail_text(task, user_timezone)
 
-<b>Текст:</b>
-<i>{task['task_text']}</i>
-
-<b>Статус:</b> {status_text}
-<b>Создана:</b> {created_date}
-"""
-
-        # Добавляем дату выполнения если задача выполнена
-        if task['status'] and task['completed_at']:
-            completed_date = task['completed_at'].strftime("%d.%m.%Y в %H:%M")
-            task_detail_text += f"<b>Выполнена:</b> {completed_date}"
         # Обновляем сообщение
         await callback.message.edit_text(
             task_detail_text,
@@ -156,8 +104,7 @@ async def show_task_detail(callback: CallbackQuery):
         )
 
     except Exception as e:
+        logger.error(f"Error loading task {task_id} for user {user_id}: {e}")
         await callback.message.edit_text(
             "❌ Произошла ошибка при загрузке задачи."
         )
-
-        logger.error(f"Error loading task {task_id} for user {user_id}: {e}")
