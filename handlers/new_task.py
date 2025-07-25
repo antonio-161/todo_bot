@@ -8,6 +8,7 @@ from database import db
 from keyboards.reply import get_cancel_keyboard, get_main_keyboard
 from keyboards.inline import get_task_detail_keyboard
 from utils.logging_config import get_logger
+from utils.task_formatting import format_task_detail_text
 
 logger = get_logger(__name__)
 
@@ -159,8 +160,15 @@ async def save_edited_task(message: Message, state: FSMContext):
             # Получаем обновленную задачу и показываем детали
             task = await db.get_task_by_id(task_id, message.from_user.id)
             if task:
-                from handlers.actions import format_task_detail_text
-                task_detail_text = await format_task_detail_text(task)
+
+                # Получаем часовой пояс пользователя
+                user_timezone = await db.get_user_timezone(
+                    message.from_user.id
+                )
+
+                task_detail_text = await format_task_detail_text(
+                    task, user_timezone
+                )
 
                 await message.answer(
                     "✅ Задача обновлена!",

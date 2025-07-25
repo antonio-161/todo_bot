@@ -1,0 +1,34 @@
+# Игнорировать Git-специфичные файлы
+.git
+.gitignore
+
+# Игнорировать файлы окружения
+.env
+.env.example # Если используете
+
+# Python-специфичные
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+env/
+.pytest_cache/
+*.log
+logs/ # Если есть локальная папка для логов
+
+# IDE-специфичные
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Dockerfile'ы, которые не являются текущим
+Dockerfile.dev
+docker-compose.dev.yml
+# Если Dockerfile.prod находится в корне, можно не игнорировать
+# Если основной Dockerfile называется Dockerfile, а этот Dockerfile.prod,
+# и вы не хотите его копировать в образ, то игнорируйте:
+# Dockerfile
+# docker-compose.yml # Если есть

@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import sys
 
 from aiogram import Bot, Dispatcher
@@ -9,21 +8,21 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import BOT_TOKEN
 from database import db
+from utils.logging_config import setup_logging, get_logger
 
 # Импортируем все роутеры
-from handlers import start, help, new_task, tasks_list, actions
-
-# Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('bot.log'),
-        logging.StreamHandler(sys.stdout)
-    ]
+from handlers import (
+    actions,
+    help,
+    new_task,
+    start,
+    tasks_list,
+    timezone
 )
 
-logger = logging.getLogger(__name__)
+# Настройка логирования
+setup_logging()
+logger = get_logger(__name__)
 
 
 async def main():
@@ -44,7 +43,8 @@ async def main():
         help.router,
         new_task.router,
         tasks_list.router,
-        actions.router
+        actions.router,
+        timezone.router
     )
 
     try:
@@ -67,6 +67,7 @@ async def main():
         await db.close_pool()
         await bot.session.close()
         logger.info("Подключение к базе данных закрыто")
+
 
 if __name__ == "__main__":
     try:
