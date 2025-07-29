@@ -5,7 +5,7 @@ services:
     image: postgres:15-alpine
     container_name: todo_bot_db_prod
     environment:
-      POSTGRES_DB: todo-bot
+      POSTGRES_DB: todo_bot
       POSTGRES_USER: todo_bot_user
       POSTGRES_PASSWORD: ${DB_PASSWORD} # Будет браться из .env
       POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
