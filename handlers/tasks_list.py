@@ -18,7 +18,8 @@ router = Router()
 @router.message(F.text == "📋 Мои задачи")
 @router.callback_query(F.data == "my_tasks")
 @router.callback_query(F.data == "refresh_tasks")
-async def show_tasks_list(update):
+@router.callback_query(F.data == "hide_completed")
+async def show_tasks_list(update, show_completed: bool = False):
     """Показать список задач пользователя"""
 
     # Определяем тип события
@@ -33,27 +34,40 @@ async def show_tasks_list(update):
         edit_message = False
 
     try:
-        # Получаем активные задачи пользователя
-        tasks = await db.get_user_tasks(user_id, include_completed=False)
+        # Получаем задачи в зависимости от режима
+        tasks = await db.get_user_tasks(
+            user_id,
+            include_completed=show_completed
+        )
+
+        # Получаем количество выполненных задач для кнопки
+        completed_count = await db.get_completed_tasks_count(user_id)
 
         # Получаем часовой пояс пользователя
         user_timezone = await db.get_user_timezone(user_id)
 
-        # Форматируем текст списка задач с пользовательским часовым поясом
-        tasks_text = format_tasks_list_text(tasks, user_timezone)
+        # Форматируем текст списка задач с учетом режима просмотра
+        tasks_text = format_tasks_list_text(
+            tasks, user_timezone, show_completed
+        )
+
+        # Создаем клавиатуру с учетом режима и количества выполненных
+        keyboard = get_tasks_list_keyboard(
+            tasks, show_completed, completed_count
+        )
 
         # Обновляем сообщение
         if edit_message:
             await message.edit_text(
                 tasks_text,
                 parse_mode="HTML",
-                reply_markup=get_tasks_list_keyboard(tasks)
+                reply_markup=keyboard
             )
         else:
             await message.answer(
                 tasks_text,
                 parse_mode="HTML",
-                reply_markup=get_tasks_list_keyboard(tasks)
+                reply_markup=keyboard
             )
 
     except Exception as e:
@@ -64,6 +78,12 @@ async def show_tasks_list(update):
             await message.edit_text(error_text)
         else:
             await message.answer(error_text)
+
+
+@router.callback_query(F.data == "show_completed")
+async def show_completed_tasks(callback: CallbackQuery):
+    """Показать список с выполненными задачами"""
+    await show_tasks_list(callback, show_completed=True)
 
 
 @router.callback_query(F.data.startswith("show_task:"))

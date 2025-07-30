@@ -8,26 +8,37 @@ from keyboards.inline import (
     get_task_detail_keyboard,
     get_tasks_list_keyboard
 )
+from handlers.tasks_list import show_tasks_list
 from states import TaskStates
 from utils.logging_config import get_logger
 from utils.task_formatting import format_task_detail_text
-from utils.timezone_utils import format_datetime_for_user
 
 logger = get_logger(__name__)
 
 router = Router()
 
 
-async def update_tasks_list_message(callback: CallbackQuery):
+async def update_tasks_list_message(
+        callback: CallbackQuery,
+        show_completed: bool = False
+):
     """Обновление сообщения со списком задач"""
     user_id = callback.from_user.id
-    tasks = await db.get_user_tasks(user_id, include_completed=False)
+    tasks = await db.get_user_tasks(user_id, include_completed=show_completed)
+    completed_count = await db.get_completed_tasks_count(user_id)
 
     # Получаем часовой пояс пользователя
     user_timezone = await db.get_user_timezone(user_id)
 
     if not tasks:
-        no_tasks_text = """📋 <b>Список задач</b>
+        if show_completed:
+            no_tasks_text = """📋 <b>Список задач</b>
+
+У тебя пока нет задач!
+
+Создай свою первую задачу с помощью кнопки ниже или команды /new_task"""
+        else:
+            no_tasks_text = """📋 <b>Список задач</b>
 
 У тебя пока нет активных задач!
 
@@ -36,32 +47,21 @@ async def update_tasks_list_message(callback: CallbackQuery):
         await callback.message.edit_text(
             no_tasks_text,
             parse_mode="HTML",
-            reply_markup=get_tasks_list_keyboard([])
+            reply_markup=get_tasks_list_keyboard(
+                [], show_completed, completed_count
+            )
         )
         return
 
-    tasks_text = f"📋 <b>Твои задачи ({len(tasks)})</b>\n\n"
-
-    for i, task in enumerate(tasks, 1):
-        # Используем пользовательский часовой пояс
-        created_date = format_datetime_for_user(
-            task['created_at'], user_timezone
-        ).split(' в ')[0]  # Берем только дату без времени
-        status_emoji = "✅" if task['status'] else "⏳"
-
-        task_text = task['task_text']
-        if len(task_text) > 60:
-            task_text = task_text[:57] + "..."
-
-        tasks_text += f"{i}. {status_emoji} <i>{task_text}</i>\n"
-        tasks_text += f"   📅 {created_date}\n\n"
-
-    tasks_text += "👆 <i>Нажми на задачу для подробного просмотра</i>"
+    from utils.task_formatting import format_tasks_list_text
+    tasks_text = format_tasks_list_text(tasks, user_timezone, show_completed)
 
     await callback.message.edit_text(
         tasks_text,
         parse_mode="HTML",
-        reply_markup=get_tasks_list_keyboard(tasks)
+        reply_markup=get_tasks_list_keyboard(
+            tasks, show_completed, completed_count
+        )
     )
 
 
@@ -139,7 +139,9 @@ async def complete_task_callback(callback: CallbackQuery):
 
         if success:
             await callback.answer(
-                "✅ Задача отмечена как выполненная!", show_alert=True
+                "✅ Задача отмечена как выполненная! "
+                "Теперь она видна в разделе выполненных задач.",
+                show_alert=True
             )
 
             # Получаем часовой пояс пользователя
@@ -168,7 +170,8 @@ async def complete_task_callback(callback: CallbackQuery):
         await callback.answer("❌ Произошла ошибка", show_alert=True)
         logger.error(
             f"Ошибка отметки выполненной задачи {task_id} "
-            f"пользователя {user_id}: {e}")
+            f"пользователя {user_id}: {e}"
+        )
 
 
 @router.callback_query(F.data.startswith("delete_task:"))
@@ -237,7 +240,9 @@ async def confirm_delete_task(callback: CallbackQuery):
 
         if success:
             await callback.answer("🗑 Задача удалена!", show_alert=True)
-            await update_tasks_list_message(callback)
+            # Возвращаемся к списку задач
+            # (с показом выполненных если была выполненная)
+            await show_tasks_list(callback, show_completed=True)
         else:
             await callback.answer(
                 "❌ Не удалось удалить задачу", show_alert=True
@@ -280,3 +285,139 @@ async def cancel_edit_callback(callback: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.error(f"Error canceling edit for task {task_id}: {e}")
         await callback.answer("❌ Произошла ошибка", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("reactivate_task:"))
+async def reactivate_task_callback(callback: CallbackQuery):
+    """Реактивация задачи (отмена выполнения)"""
+    await callback.answer()
+
+    try:
+        task_id = int(callback.data.split(":")[1])
+    except (ValueError, IndexError):
+        await callback.answer("❌ Неверный формат данных", show_alert=True)
+        return
+
+    user_id = callback.from_user.id
+
+    try:
+        success = await db.reactivate_task(task_id, user_id)
+
+        if success:
+            await callback.answer(
+                "⏳ Задача снова активна!", show_alert=True
+            )
+
+            # Получаем часовой пояс пользователя
+            user_timezone = await db.get_user_timezone(user_id)
+
+            # Обновляем сообщение с деталями задачи
+            task = await db.get_task_by_id(task_id, user_id)
+            if task:
+                updated_text = await format_task_detail_text(
+                    task, user_timezone
+                )
+                await callback.message.edit_text(
+                    updated_text,
+                    parse_mode="HTML",
+                    reply_markup=get_task_detail_keyboard(
+                        task_id, task['status']
+                    )
+                )
+        else:
+            await callback.answer(
+                "❌ Не удалось реактивировать задачу",
+                show_alert=True
+            )
+
+    except Exception as e:
+        await callback.answer("❌ Произошла ошибка", show_alert=True)
+        logger.error(
+            f"Ошибка реактивации задачи {task_id} "
+            f"пользователя {user_id}: {e}"
+        )
+
+
+@router.callback_query(F.data.startswith("hide_task:"))
+async def hide_task_callback(callback: CallbackQuery):
+    """Запрос подтверждения скрытия задачи"""
+    await callback.answer()
+
+    try:
+        task_id = int(callback.data.split(":")[1])
+    except (ValueError, IndexError):
+        await callback.answer("❌ Неверный формат данных", show_alert=True)
+        return
+
+    user_id = callback.from_user.id
+
+    try:
+        task = await db.get_task_by_id(task_id, user_id)
+
+        if not task:
+            await callback.answer("❌ Задача не найдена", show_alert=True)
+            return
+
+        if not task['status']:
+            await callback.answer(
+                "❌ Можно скрыть только выполненную задачу",
+                show_alert=True
+            )
+            return
+
+        task_text = task['task_text']
+        if len(task_text) > 100:
+            task_text = task_text[:97] + "..."
+
+        confirmation_text = f"""🫥 <b>Скрытие задачи</b>
+
+<b>Ты действительно хочешь скрыть эту выполненную задачу?</b>
+
+<i>{task_text}</i>
+
+ℹ️ <b>Скрытые задачи не отображаются в списке, но остаются в базе данных</b>"""
+
+        await callback.message.edit_text(
+            confirmation_text,
+            parse_mode="HTML",
+            reply_markup=get_confirmation_keyboard(task_id, "hide")
+        )
+
+    except Exception as e:
+        await callback.answer("❌ Произошла ошибка", show_alert=True)
+        logger.error(
+            f"Ошибка при подготовке скрытия задачи {task_id}: {e}"
+        )
+
+
+@router.callback_query(F.data.startswith("confirm_hide:"))
+async def confirm_hide_task(callback: CallbackQuery):
+    """Подтверждение скрытия задачи"""
+    await callback.answer()
+
+    try:
+        task_id = int(callback.data.split(":")[1])
+    except (ValueError, IndexError):
+        await callback.answer("❌ Неверный формат данных", show_alert=True)
+        return
+
+    user_id = callback.from_user.id
+
+    try:
+        success = await db.hide_task(task_id, user_id)
+
+        if success:
+            await callback.answer("🫥 Задача скрыта!", show_alert=True)
+            # Возвращаемся к списку задач
+            await show_tasks_list(callback, show_completed=True)
+        else:
+            await callback.answer(
+                "❌ Не удалось скрыть задачу", show_alert=True
+            )
+
+    except Exception as e:
+        await callback.answer(
+            "❌ Произошла ошибка при скрытии", show_alert=True
+        )
+        logger.error(f"Ошибка скрытия задачи {task_id} "
+                     f"для пользователя {user_id}: {e}")

@@ -35,6 +35,7 @@ class Database:
             user_id BIGINT NOT NULL,
             task_text TEXT NOT NULL,
             status BOOLEAN DEFAULT FALSE,
+            is_hidden BOOLEAN DEFAULT FALSE,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             completed_at TIMESTAMP WITH TIME ZONE NULL
         );
@@ -48,11 +49,11 @@ class Database:
 
         CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
         CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+        CREATE INDEX IF NOT EXISTS idx_tasks_is_hidden ON tasks(is_hidden);
         CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
         CREATE INDEX IF NOT EXISTS idx_tasks_completed_at
         ON tasks(completed_at);
-        CREATE INDEX IF NOT EXISTS idx_users_timezone
-        ON users(timezone);
+        CREATE INDEX IF NOT EXISTS idx_users_timezone ON users(timezone);
         """
 
         async with self.pool.acquire() as connection:
@@ -89,23 +90,29 @@ class Database:
             self,
             user_id: int,
             include_completed: bool = False,
-            limit: int = 50,
+            only_active: bool = True,
+            limit: int = 10,
             offset: int = 0
     ) -> List[Dict]:
         """Получение задач пользователя с пагинацией"""
         if include_completed:
+            # Показываем все задачи (активные + выполненные),
+            # но исключаем скрытые
             query = """
-            SELECT id, task_text, status, created_at, completed_at
+            SELECT id, task_text, status, created_at, completed_at, is_hidden
             FROM tasks
-            WHERE user_id = $1
-            ORDER BY created_at DESC
+            WHERE user_id = $1 AND (is_hidden = FALSE OR is_hidden IS NULL)
+            ORDER BY status ASC, created_at DESC
             LIMIT $2 OFFSET $3
             """
         else:
+            # Показываем только активные задачи
             query = """
-            SELECT id, task_text, status, created_at, completed_at
+            SELECT id, task_text, status, created_at, completed_at, is_hidden
             FROM tasks
-            WHERE user_id = $1 AND status = FALSE
+            WHERE user_id = $1
+              AND status = FALSE
+              AND (is_hidden = FALSE OR is_hidden IS NULL)
             ORDER BY created_at DESC
             LIMIT $2 OFFSET $3
             """
@@ -215,6 +222,54 @@ class Database:
 
         async with self.pool.acquire() as connection:
             return await connection.fetchval(query, user_id)
+
+    async def get_completed_tasks_count(self, user_id: int) -> int:
+        """Получение количества выполненных (но не скрытых) задач"""
+        query = """
+        SELECT COUNT(*) FROM tasks
+        WHERE user_id = $1
+          AND status = TRUE
+          AND (is_hidden = FALSE OR is_hidden IS NULL)
+        """
+
+        async with self.pool.acquire() as connection:
+            return await connection.fetchval(query, user_id)
+
+    async def hide_task(self, task_id: int, user_id: int) -> bool:
+        """Скрытие задачи (пометка как скрытая)"""
+        query = """
+        UPDATE tasks
+        SET is_hidden = TRUE
+        WHERE id = $1 AND user_id = $2 AND status = TRUE
+        RETURNING id
+        """
+
+        async with self.pool.acquire() as connection:
+            result = await connection.fetchval(query, task_id, user_id)
+            success = result is not None
+            if success:
+                logger.info(
+                    f"Задача {task_id} скрыта пользователем {user_id}"
+                )
+            return success
+
+    async def reactivate_task(self, task_id: int, user_id: int) -> bool:
+        """Реактивация задачи (отмена выполнения)"""
+        query = """
+        UPDATE tasks
+        SET status = FALSE, completed_at = NULL
+        WHERE id = $1 AND user_id = $2 AND status = TRUE
+        RETURNING id
+        """
+
+        async with self.pool.acquire() as connection:
+            result = await connection.fetchval(query, task_id, user_id)
+            success = result is not None
+            if success:
+                logger.info(
+                    f"Задача {task_id} реактивирована пользователем {user_id}"
+                )
+            return success
 
     async def set_user_timezone(self, user_id: int, timezone: str) -> bool:
         """Установка часового пояса пользователя"""

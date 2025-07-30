@@ -5,7 +5,11 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from utils.timezone_utils import get_timezone_keyboard_data
 
 
-def get_tasks_list_keyboard(tasks: List[Dict]) -> InlineKeyboardMarkup:
+def get_tasks_list_keyboard(
+    tasks: List[Dict],
+    show_completed: bool = False,
+    completed_count: int = 0
+) -> InlineKeyboardMarkup:
     """Создание клавиатуры для списка задач"""
     buttons = []
 
@@ -30,11 +34,32 @@ def get_tasks_list_keyboard(tasks: List[Dict]) -> InlineKeyboardMarkup:
             )
         ])
 
+    # Кнопка переключения режима просмотра
+    if show_completed:
+        # Если показываем выполненные, добавляем кнопку скрытия
+        toggle_button = InlineKeyboardButton(
+            text="👁‍🗨 Скрыть выполненные",
+            callback_data="hide_completed"
+        )
+    else:
+        # Если скрываем выполненные, показываем кнопку с количеством
+        if completed_count > 0:
+            toggle_button = InlineKeyboardButton(
+                text=f"👁 Показать выполненные ({completed_count})",
+                callback_data="show_completed"
+            )
+        else:
+            toggle_button = None
+
     # Добавляем кнопки управления
     control_buttons = [
         InlineKeyboardButton(text="📝 Новая задача", callback_data="new_task"),
         InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_tasks")
     ]
+
+    if toggle_button:
+        buttons.append([toggle_button])
+
     buttons.append(control_buttons)
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -71,6 +96,22 @@ def get_task_detail_keyboard(
                     InlineKeyboardButton(
                         text="✏️ Редактировать",
                         callback_data=f"edit_task:{task_id}"
+                    )
+                ]
+            ])
+        else:
+            # Кнопки для выполненных задач
+            buttons.extend([
+                [
+                    InlineKeyboardButton(
+                        text="⏳ Отметить как активную",
+                        callback_data=f"reactivate_task:{task_id}"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="🫥 Скрыть задачу",
+                        callback_data=f"hide_task:{task_id}"
                     )
                 ]
             ])

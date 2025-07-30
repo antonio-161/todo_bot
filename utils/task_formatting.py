@@ -26,31 +26,85 @@ async def format_task_detail_text(
     return text
 
 
-def format_tasks_list_text(tasks: list, user_timezone: str = 'UTC') -> str:
+def format_tasks_list_text(
+    tasks: list,
+    user_timezone: str = 'UTC',
+    show_completed: bool = False
+) -> str:
     """Форматирование текста списка задач"""
     if not tasks:
-        return """📋 <b>Список задач</b>
+        if show_completed:
+            return """📋 <b>Список задач</b>
+
+У тебя пока нет задач!
+
+Создай свою первую задачу с помощью кнопки ниже или команды /new_task"""
+        else:
+            return """📋 <b>Список задач</b>
 
 У тебя пока нет активных задач!
 
 Создай свою первую задачу с помощью кнопки ниже или команды /new_task"""
 
-    tasks_text = f"📋 <b>Твои задачи ({len(tasks)})</b>\n\n"
+    # Разделяем задачи на активные и выполненные
+    active_tasks = [task for task in tasks if not task['status']]
+    completed_tasks = [task for task in tasks if task['status']]
 
-    for i, task in enumerate(tasks, 1):
-        # Используем пользовательский часовой пояс
-        created_date = format_datetime_for_user(
-            task['created_at'], user_timezone
-        ).split(' в ')[0]  # Берем только дату без времени
-        status_emoji = "✅" if task['status'] else "⏳"
+    if show_completed:
+        total_count = len(tasks)
+        header = f"📋 <b>Все задачи ({total_count})</b>"
+        if len(active_tasks) > 0 and len(completed_tasks) > 0:
+            header += (
+                f"\n<i>Активных: {len(active_tasks)}, "
+                f"выполненных: {len(completed_tasks)}</i>"
+            )
+    else:
+        header = f"📋 <b>Активные задачи ({len(active_tasks)})</b>"
 
-        # Обрезаем длинные задачи в списке
-        task_text = task['task_text']
-        if len(task_text) > 60:
-            task_text = task_text[:57] + "..."
+    tasks_text = header + "\n\n"
 
-        tasks_text += f"{i}. {status_emoji} <i>{task_text}</i>\n"
-        tasks_text += f"   📅 {created_date}\n\n"
+    # Сначала показываем активные задачи
+    if active_tasks:
+        if show_completed and completed_tasks:
+            tasks_text += "<b>⏳ Активные:</b>\n"
 
-    tasks_text += "👆 <i>Нажми на задачу для подробного просмотра</i>"
+        for i, task in enumerate(active_tasks, 1):
+            created_date = format_datetime_for_user(
+                task['created_at'], user_timezone
+            ).split(' в ')[0]
+
+            task_text = task['task_text']
+            if len(task_text) > 60:
+                task_text = task_text[:57] + "..."
+
+            tasks_text += f"{i}. ⏳ <i>{task_text}</i>\n"
+            tasks_text += f"   📅 {created_date}\n\n"
+
+    # Затем показываем выполненные (если режим включен)
+    if show_completed and completed_tasks:
+        if active_tasks:
+            tasks_text += "<b>✅ Выполненные:</b>\n"
+
+        for i, task in enumerate(completed_tasks, len(active_tasks) + 1):
+            created_date = format_datetime_for_user(
+                task['created_at'], user_timezone
+            ).split(' в ')[0]
+
+            completed_date = ""
+            if task['completed_at']:
+                completed_date = format_datetime_for_user(
+                    task['completed_at'], user_timezone
+                ).split(' в ')[0]
+
+            task_text = task['task_text']
+            if len(task_text) > 60:
+                task_text = task_text[:57] + "..."
+
+            tasks_text += f"{i}. ✅ <i>{task_text}</i>\n"
+            tasks_text += f"   📅 {created_date}"
+            if completed_date:
+                tasks_text += f" → ✅ {completed_date}"
+            tasks_text += "\n\n"
+
+    tasks_text += "👇 <i>Нажми на задачу для подробного просмотра</i>"
     return tasks_text

@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     status BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP NULL
+    is_hidden BOOLEAN DEFAULT FALSE
 );
 
 -- Создание таблицы для пользователей
@@ -31,9 +32,11 @@ CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_completed_at ON tasks(completed_at);
 CREATE INDEX IF NOT EXISTS idx_users_timezone ON users(timezone);
+CREATE INDEX IF NOT EXISTS idx_tasks_is_hidden ON tasks(is_hidden);
 
--- Создание пользователя для бота (опционально)
-CREATE USER todo_bot_user WITH PASSWORD '2010';
-GRANT ALL PRIVILEGES ON DATABASE todo_bot_dev TO todo_bot_user;
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO user_dev;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO user_dev;
+COMMENT ON COLUMN tasks.is_hidden IS 'Флаг скрытия задачи. TRUE - задача скрыта из списков, FALSE - видима';
+COMMENT ON COLUMN tasks.created_at IS 'Дата и время создания задачи';
+COMMENT ON COLUMN tasks.completed_at IS 'Дата и время завершения задачи';
+COMMENT ON COLUMN tasks.status IS 'Статус задачи (TRUE - выполнена, FALSE - не выполнена)';
+COMMENT ON COLUMN tasks.task_text IS 'Текст задачи';
+COMMENT ON COLUMN users.timezone IS 'Временная зона пользователя';
