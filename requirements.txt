@@ -1,4 +1,6 @@
 aiogram==3.4.1
 asyncpg==0.29.0
+openai==2.2.0
 python-dotenv==1.0.0
 pytz==2025.2
+watchdog==6.0.0

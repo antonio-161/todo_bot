@@ -40,7 +40,13 @@ services:
     volumes:
       - .:/app
       - ./logs:/app/logs
-    command: python bot.py # Убедитесь, что это правильный путь к вашему основному файлу бота
+    command: >
+      watchmedo auto-restart
+      --directory=.
+      --pattern=*.py
+      --recursive
+      -- python bot.py
+
 
 volumes:
   postgres_data_dev:

@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BOT_TOKEN = os.getenv('BOT_TOKEN')
+QWEN_API_KEY = os.getenv("QWEN_API_KEY", "")
 
 DB_CONFIG = {
     'host': os.getenv('DB_HOST', 'localhost'),
