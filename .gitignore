@@ -12,8 +12,8 @@ lib/
 logs/ # Директория для логов, которая монтируется в Docker контейнер
 
 # Project specific
-.env # Содержит чувствительные данные (токены, пароли БД)
-*.sqlite3 # Если вдруг будете использовать SQLite
+.env
+*.sqlite3
 
 # IDEs and OS
 .idea/             # JetBrains IDEs (PyCharm, IntelliJ IDEA)
@@ -40,4 +40,4 @@ Thumbs.db          # Windows
 # Build artifacts
 dist/
 build/
-*.egg-info/
+*.egg-info/.env
